@@ -1,4 +1,4 @@
-import { createContext, useState, useContext } from 'react';
+import { createContext, useState, useContext, useEffect } from 'react';
 import api from '../api/axios';
 
 const AuthContext = createContext(null);
@@ -12,6 +12,23 @@ export const AuthProvider = ({ children }) => {
   const [accessToken, setAccessToken] = useState(() => {
     return localStorage.getItem('accessToken') || null;
   });
+
+  // Sync logout/login across browser tabs
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'accessToken' && e.newValue === null) {
+        setAccessToken(null);
+        setUser(null);
+      }
+      if (e.key === 'accessToken' && e.newValue) {
+        setAccessToken(e.newValue);
+        const stored = localStorage.getItem('user');
+        if (stored) setUser(JSON.parse(stored));
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const login = async ({ email, password }) => {
     const { data } = await api.post('/auth/login', { email, password });

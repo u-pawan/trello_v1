@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -13,27 +15,37 @@ const App = () => {
     <BrowserRouter>
       <AuthProvider>
         <SocketProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/invite/:token" element={<AcceptInvite />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
+          <ErrorBoundary>
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                duration: 4000,
+                style: { fontSize: '14px' },
+                error: { duration: 5000 },
+              }}
             />
-            <Route
-              path="/board/:boardId"
-              element={
-                <ProtectedRoute>
-                  <Board />
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/invite/:token" element={<AcceptInvite />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/board/:boardId"
+                element={
+                  <ProtectedRoute>
+                    <Board />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </ErrorBoundary>
         </SocketProvider>
       </AuthProvider>
     </BrowserRouter>

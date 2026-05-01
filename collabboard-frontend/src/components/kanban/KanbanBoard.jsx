@@ -1,5 +1,6 @@
 import { DragDropContext } from '@hello-pangea/dnd';
 import { useState } from 'react';
+import toast from 'react-hot-toast';
 import api from '../../api/axios';
 import Column from './Column';
 
@@ -21,38 +22,33 @@ const KanbanBoard = ({ boardId, lists, setLists, onAddList, socket, board }) => 
     const destList = lists.find((l) => l._id === destination.droppableId);
     if (!sourceList || !destList) return;
 
+    // Snapshot for rollback
+    const previousLists = lists.map((l) => ({ ...l, cards: [...l.cards] }));
+
     const sourceCards = [...sourceList.cards];
     const destCards =
-      source.droppableId === destination.droppableId
-        ? sourceCards
-        : [...destList.cards];
+      source.droppableId === destination.droppableId ? sourceCards : [...destList.cards];
 
     const [movedCard] = sourceCards.splice(source.index, 1);
+    if (!movedCard) return;
 
     if (source.droppableId === destination.droppableId) {
-      // Same list reorder
       sourceCards.splice(destination.index, 0, movedCard);
       setLists((prev) =>
         prev.map((l) =>
           l._id === sourceList._id
-            ? {
-                ...l,
-                cards: sourceCards.map((c, i) => ({ ...c, position: i })),
-              }
+            ? { ...l, cards: sourceCards.map((c, i) => ({ ...c, position: i })) }
             : l
         )
       );
     } else {
-      // Cross-list move — optimistic update
       destCards.splice(destination.index, 0, { ...movedCard, list: destList._id });
       setLists((prev) =>
         prev.map((l) => {
-          if (l._id === sourceList._id) {
+          if (l._id === sourceList._id)
             return { ...l, cards: sourceCards.map((c, i) => ({ ...c, position: i })) };
-          }
-          if (l._id === destList._id) {
+          if (l._id === destList._id)
             return { ...l, cards: destCards.map((c, i) => ({ ...c, position: i })) };
-          }
           return l;
         })
       );
@@ -74,9 +70,9 @@ const KanbanBoard = ({ boardId, lists, setLists, onAddList, socket, board }) => 
           });
         }
       } catch (err) {
-        console.error('Failed to move card:', err);
-        // Revert on error
-        setLists((prev) => [...prev]);
+        // Revert to the exact snapshot taken before drag
+        setLists(previousLists);
+        toast.error(err.response?.data?.message || 'Failed to move card');
       }
     }
   };
@@ -128,10 +124,7 @@ const KanbanBoard = ({ boardId, lists, setLists, onAddList, socket, board }) => 
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAddingList(false);
-                      setNewListTitle('');
-                    }}
+                    onClick={() => { setAddingList(false); setNewListTitle(''); }}
                     className="text-white/80 hover:text-white text-sm px-2 py-1.5"
                   >
                     ✕

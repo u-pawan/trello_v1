@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import api from '../../api/axios';
 
 const AddCardForm = ({ listId, boardId, onCardAdded, show, setShow }) => {
@@ -7,9 +8,7 @@ const AddCardForm = ({ listId, boardId, onCardAdded, show, setShow }) => {
   const inputRef = useRef(null);
 
   useEffect(() => {
-    if (show && inputRef.current) {
-      inputRef.current.focus();
-    }
+    if (show && inputRef.current) inputRef.current.focus();
   }, [show]);
 
   const handleSubmit = async (e) => {
@@ -17,16 +16,12 @@ const AddCardForm = ({ listId, boardId, onCardAdded, show, setShow }) => {
     if (!title.trim()) return;
     setLoading(true);
     try {
-      const { data } = await api.post('/cards', {
-        title: title.trim(),
-        listId,
-        boardId,
-      });
+      const { data } = await api.post('/cards', { title: title.trim(), listId, boardId });
       onCardAdded(data);
       setTitle('');
       setShow(false);
     } catch (err) {
-      console.error('Failed to create card:', err);
+      toast.error(err.response?.data?.message || 'Failed to create card');
     } finally {
       setLoading(false);
     }
@@ -73,10 +68,7 @@ const AddCardForm = ({ listId, boardId, onCardAdded, show, setShow }) => {
         </button>
         <button
           type="button"
-          onClick={() => {
-            setShow(false);
-            setTitle('');
-          }}
+          onClick={() => { setShow(false); setTitle(''); }}
           className="text-gray-400 hover:text-gray-600 text-sm px-2 py-1.5"
         >
           ✕

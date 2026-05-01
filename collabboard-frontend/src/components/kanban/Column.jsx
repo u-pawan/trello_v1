@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Droppable } from '@hello-pangea/dnd';
+import toast from 'react-hot-toast';
 import api from '../../api/axios';
 import TaskCard from './TaskCard';
 import AddCardForm from './AddCardForm';
@@ -12,40 +13,33 @@ const Column = ({ list, boardId, setLists, socket, board }) => {
   const handleTitleSave = async () => {
     setIsEditingTitle(false);
     if (titleInput.trim() === list.title) return;
+    if (!titleInput.trim()) {
+      setTitleInput(list.title);
+      return;
+    }
     try {
       await api.put(`/lists/${list._id}`, { title: titleInput.trim() });
       setLists((prev) =>
-        prev.map((l) =>
-          l._id === list._id ? { ...l, title: titleInput.trim() } : l
-        )
+        prev.map((l) => (l._id === list._id ? { ...l, title: titleInput.trim() } : l))
       );
     } catch (err) {
       setTitleInput(list.title);
-      console.error('Failed to update list title:', err);
+      toast.error(err.response?.data?.message || 'Failed to update list title');
     }
   };
 
   const handleCardAdded = (card) => {
     setLists((prev) =>
-      prev.map((l) =>
-        l._id === list._id ? { ...l, cards: [...l.cards, card] } : l
-      )
+      prev.map((l) => (l._id === list._id ? { ...l, cards: [...l.cards, card] } : l))
     );
-    if (socket) {
-      socket.emit('card:create', { boardId, card });
-    }
+    if (socket) socket.emit('card:create', { boardId, card });
   };
 
   const handleCardUpdated = (updatedCard) => {
     setLists((prev) =>
       prev.map((l) =>
         l._id === list._id
-          ? {
-              ...l,
-              cards: l.cards.map((c) =>
-                c._id === updatedCard._id ? updatedCard : c
-              ),
-            }
+          ? { ...l, cards: l.cards.map((c) => (c._id === updatedCard._id ? updatedCard : c)) }
           : l
       )
     );
@@ -54,9 +48,7 @@ const Column = ({ list, boardId, setLists, socket, board }) => {
   const handleCardDeleted = (cardId) => {
     setLists((prev) =>
       prev.map((l) =>
-        l._id === list._id
-          ? { ...l, cards: l.cards.filter((c) => c._id !== cardId) }
-          : l
+        l._id === list._id ? { ...l, cards: l.cards.filter((c) => c._id !== cardId) } : l
       )
     );
   };
@@ -87,9 +79,7 @@ const Column = ({ list, boardId, setLists, socket, board }) => {
             title="Double-click to edit"
           >
             {list.title}
-            <span className="ml-2 text-gray-400 font-normal text-xs">
-              {list.cards.length}
-            </span>
+            <span className="ml-2 text-gray-400 font-normal text-xs">{list.cards.length}</span>
           </h3>
         )}
       </div>
@@ -104,6 +94,11 @@ const Column = ({ list, boardId, setLists, socket, board }) => {
               snapshot.isDraggingOver ? 'bg-indigo-50' : ''
             }`}
           >
+            {list.cards.length === 0 && !snapshot.isDraggingOver && (
+              <p className="text-xs text-gray-400 text-center py-3 px-2">
+                No cards yet — add one below
+              </p>
+            )}
             {list.cards.map((card, index) => (
               <TaskCard
                 key={card._id}

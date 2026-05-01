@@ -2,197 +2,173 @@ const Card = require('../models/Card');
 const List = require('../models/List');
 const Board = require('../models/Board');
 const Notification = require('../models/Notification');
+const AppError = require('../utils/AppError');
 
 const createCard = async (req, res) => {
-  try {
-    const { title, listId, boardId } = req.body;
-    if (!title || !listId || !boardId) {
-      return res.status(400).json({ message: 'Title, listId, and boardId are required' });
-    }
+  const { title, listId, boardId } = req.body;
 
-    const list = await List.findById(listId);
-    if (!list) {
-      return res.status(404).json({ message: 'List not found' });
-    }
+  const list = await List.findById(listId);
+  if (!list) throw new AppError('List not found', 404);
 
-    const board = await Board.findById(boardId);
-    if (!board) {
-      return res.status(404).json({ message: 'Board not found' });
-    }
+  const board = await Board.findById(boardId);
+  if (!board) throw new AppError('Board not found', 404);
 
-    const position = list.cards.length;
-    const card = await Card.create({ title, list: listId, board: boardId, position });
-    await List.findByIdAndUpdate(listId, { $push: { cards: card._id } });
+  const isMember = board.members.some((m) => m.user.toString() === req.user.id.toString());
+  if (!isMember) throw new AppError('Access denied', 403);
 
-    // Notify all board members except actor
-    const notificationPromises = board.members
-      .filter((m) => m.user.toString() !== req.user.id.toString())
-      .map((m) =>
-        Notification.create({
-          user: m.user,
-          actor: req.user.id,
-          type: 'card_created',
-          board: boardId,
-          message: `created a new card "${title}"`,
-        })
-      );
-    const notifications = await Promise.all(notificationPromises);
+  const position = list.cards.length;
+  const card = await Card.create({ title, list: listId, board: boardId, position });
+  await List.findByIdAndUpdate(listId, { $push: { cards: card._id } });
 
-    const io = req.app.get('io');
-    io.to(`board:${boardId}`).emit('card:created', card);
+  const notificationPromises = board.members
+    .filter((m) => m.user.toString() !== req.user.id.toString())
+    .map((m) =>
+      Notification.create({
+        user: m.user,
+        actor: req.user.id,
+        type: 'card_created',
+        board: boardId,
+        message: `created a new card "${title}"`,
+      })
+    );
+  const notifications = await Promise.all(notificationPromises);
 
-    // Emit real-time notification to each member
-    notifications.forEach((notif) => {
-      io.to(`user:${notif.user}`).emit('notification:new', notif);
-    });
+  const io = req.app.get('io');
+  io.to(`board:${boardId}`).emit('card:created', card);
+  notifications.forEach((notif) => {
+    io.to(`user:${notif.user}`).emit('notification:new', notif);
+  });
 
-    res.status(201).json(card);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  res.status(201).json(card);
 };
 
 const getCards = async (req, res) => {
-  try {
-    const cards = await Card.find({ list: req.params.listId })
-      .sort({ position: 1 })
-      .populate('assignedTo', 'name email avatar');
-    res.json(cards);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  const cards = await Card.find({ list: req.params.listId })
+    .sort({ position: 1 })
+    .populate('assignedTo', 'name email avatar');
+  res.json(cards);
 };
 
 const updateCard = async (req, res) => {
-  try {
-    const card = await Card.findById(req.params.id);
-    if (!card) {
-      return res.status(404).json({ message: 'Card not found' });
-    }
+  const card = await Card.findById(req.params.id);
+  if (!card) throw new AppError('Card not found', 404);
 
-    const allowedFields = ['title', 'description', 'dueDate', 'labels', 'position'];
-    allowedFields.forEach((field) => {
-      if (req.body[field] !== undefined) {
-        card[field] = req.body[field];
-      }
-    });
-    await card.save();
+  const board = await Board.findById(card.board);
+  if (!board) throw new AppError('Board not found', 404);
+  const isMember = board.members.some((m) => m.user.toString() === req.user.id.toString());
+  if (!isMember) throw new AppError('Access denied', 403);
 
-    const io = req.app.get('io');
-    io.to(`board:${card.board}`).emit('card:updated', card);
+  const allowedFields = ['title', 'description', 'dueDate', 'labels', 'position'];
+  allowedFields.forEach((field) => {
+    if (req.body[field] !== undefined) card[field] = req.body[field];
+  });
+  await card.save();
 
-    res.json(card);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  const io = req.app.get('io');
+  io.to(`board:${card.board}`).emit('card:updated', card);
+
+  res.json(card);
 };
 
 const moveCard = async (req, res) => {
-  try {
-    const { sourceListId, destListId, position } = req.body;
-    const card = await Card.findById(req.params.id);
-    if (!card) {
-      return res.status(404).json({ message: 'Card not found' });
-    }
+  const { sourceListId, destListId, position } = req.body;
 
-    // Remove from source list
-    await List.findByIdAndUpdate(sourceListId, { $pull: { cards: card._id } });
-    // Add to dest list
-    await List.findByIdAndUpdate(destListId, { $push: { cards: card._id } });
+  const card = await Card.findById(req.params.id);
+  if (!card) throw new AppError('Card not found', 404);
 
-    card.list = destListId;
-    card.position = position;
-    await card.save();
+  const board = await Board.findById(card.board);
+  if (!board) throw new AppError('Board not found', 404);
+  const isMember = board.members.some((m) => m.user.toString() === req.user.id.toString());
+  if (!isMember) throw new AppError('Access denied', 403);
 
-    // Create notification for board members
-    const board = await Board.findById(card.board);
-    const notificationPromises = board.members
-      .filter((m) => m.user.toString() !== req.user.id.toString())
-      .map((m) =>
-        Notification.create({
-          user: m.user,
-          actor: req.user.id,
-          type: 'card_moved',
-          board: card.board,
-          message: `moved card "${card.title}"`,
-        })
-      );
-    const notifications = await Promise.all(notificationPromises);
+  await List.findByIdAndUpdate(sourceListId, { $pull: { cards: card._id } });
+  await List.findByIdAndUpdate(destListId, { $push: { cards: card._id } });
 
-    const io = req.app.get('io');
-    io.to(`board:${card.board}`).emit('card:moved', {
-      cardId: card._id,
-      sourceListId,
-      destListId,
-      position,
-      card,
-    });
+  card.list = destListId;
+  card.position = position;
+  await card.save();
 
-    notifications.forEach((notif) => {
-      io.to(`user:${notif.user}`).emit('notification:new', notif);
-    });
+  const notificationPromises = board.members
+    .filter((m) => m.user.toString() !== req.user.id.toString())
+    .map((m) =>
+      Notification.create({
+        user: m.user,
+        actor: req.user.id,
+        type: 'card_moved',
+        board: card.board,
+        message: `moved card "${card.title}"`,
+      })
+    );
+  const notifications = await Promise.all(notificationPromises);
 
-    res.json(card);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  const io = req.app.get('io');
+  io.to(`board:${card.board}`).emit('card:moved', {
+    cardId: card._id,
+    sourceListId,
+    destListId,
+    position,
+    card,
+  });
+  notifications.forEach((notif) => {
+    io.to(`user:${notif.user}`).emit('notification:new', notif);
+  });
+
+  res.json(card);
 };
 
 const deleteCard = async (req, res) => {
-  try {
-    const card = await Card.findById(req.params.id);
-    if (!card) {
-      return res.status(404).json({ message: 'Card not found' });
-    }
+  const card = await Card.findById(req.params.id);
+  if (!card) throw new AppError('Card not found', 404);
 
-    await List.findByIdAndUpdate(card.list, { $pull: { cards: card._id } });
-    await Card.findByIdAndDelete(card._id);
-
-    res.json({ message: 'Card deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  const board = await Board.findById(card.board);
+  if (board) {
+    const isMember = board.members.some((m) => m.user.toString() === req.user.id.toString());
+    if (!isMember) throw new AppError('Access denied', 403);
   }
+
+  await List.findByIdAndUpdate(card.list, { $pull: { cards: card._id } });
+  await Card.findByIdAndDelete(card._id);
+
+  res.json({ message: 'Card deleted successfully' });
 };
 
 const assignCard = async (req, res) => {
-  try {
-    const { userId } = req.body;
-    if (!userId) {
-      return res.status(400).json({ message: 'userId is required' });
-    }
+  const { userId } = req.body;
 
-    const card = await Card.findById(req.params.id);
-    if (!card) {
-      return res.status(404).json({ message: 'Card not found' });
-    }
+  const card = await Card.findById(req.params.id);
+  if (!card) throw new AppError('Card not found', 404);
 
-    if (!card.assignedTo.map((id) => id.toString()).includes(userId)) {
-      card.assignedTo.push(userId);
-      await card.save();
-    }
+  const board = await Board.findById(card.board);
+  if (!board) throw new AppError('Board not found', 404);
 
-    // Notify the assigned user
-    if (userId !== req.user.id.toString()) {
-      const notification = await Notification.create({
-        user: userId,
-        actor: req.user.id,
-        type: 'card_assigned',
-        board: card.board,
-        message: `assigned you to card "${card.title}"`,
-      });
+  const isMember = board.members.some((m) => m.user.toString() === req.user.id.toString());
+  if (!isMember) throw new AppError('Access denied', 403);
 
-      const io = req.app.get('io');
-      io.to(`user:${userId}`).emit('notification:new', notification);
-    }
+  const isTargetMember = board.members.some((m) => m.user.toString() === userId);
+  if (!isTargetMember) throw new AppError('User is not a board member', 400);
 
-    const io = req.app.get('io');
-    const populated = await card.populate('assignedTo', 'name email avatar');
-    io.to(`board:${card.board}`).emit('card:updated', populated);
-
-    res.json(populated);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  if (!card.assignedTo.map((id) => id.toString()).includes(userId)) {
+    card.assignedTo.push(userId);
+    await card.save();
   }
+
+  if (userId !== req.user.id.toString()) {
+    const notification = await Notification.create({
+      user: userId,
+      actor: req.user.id,
+      type: 'card_assigned',
+      board: card.board,
+      message: `assigned you to card "${card.title}"`,
+    });
+    const io = req.app.get('io');
+    io.to(`user:${userId}`).emit('notification:new', notification);
+  }
+
+  const io = req.app.get('io');
+  const populated = await card.populate('assignedTo', 'name email avatar');
+  io.to(`board:${card.board}`).emit('card:updated', populated);
+
+  res.json(populated);
 };
 
 module.exports = { createCard, getCards, updateCard, moveCard, deleteCard, assignCard };

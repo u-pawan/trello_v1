@@ -1,17 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const {
-  getNotifications,
-  markRead,
-  markAllRead,
-} = require('../controllers/notification.controller');
+const { param } = require('express-validator');
+const { getNotifications, markRead, markAllRead } = require('../controllers/notification.controller');
 const { protect } = require('../middleware/auth.middleware');
+const validate = require('../middleware/validate');
 
 router.use(protect);
 
 router.get('/', getNotifications);
-// read-all must come before /:id/read to avoid "read-all" being treated as an id
 router.patch('/read-all', markAllRead);
-router.patch('/:id/read', markRead);
+router.patch(
+  '/:id/read',
+  [param('id').isMongoId().withMessage('Invalid notification ID')],
+  validate,
+  markRead
+);
 
 module.exports = router;

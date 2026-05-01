@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import toast from 'react-hot-toast';
 import api from '../../api/axios';
 import { useSocket } from '../../context/SocketContext';
 import NotificationPanel from './NotificationPanel';
@@ -18,16 +19,13 @@ const NotificationBell = () => {
 
   useEffect(() => {
     if (!socket) return;
-
     const handleNew = (notification) => {
       setNotifications((prev) => [notification, ...prev].slice(0, 20));
     };
-
     socket.on('notification:new', handleNew);
     return () => socket.off('notification:new', handleNew);
   }, [socket]);
 
-  // Close panel on outside click
   useEffect(() => {
     const handleClick = (e) => {
       if (panelRef.current && !panelRef.current.contains(e.target)) {
@@ -43,8 +41,8 @@ const NotificationBell = () => {
     try {
       const { data } = await api.get('/notifications');
       setNotifications(data);
-    } catch (err) {
-      console.error('Failed to fetch notifications:', err);
+    } catch {
+      toast.error('Failed to load notifications');
     } finally {
       setLoading(false);
     }
@@ -53,11 +51,9 @@ const NotificationBell = () => {
   const handleMarkRead = async (id) => {
     try {
       await api.patch(`/notifications/${id}/read`);
-      setNotifications((prev) =>
-        prev.map((n) => (n._id === id ? { ...n, read: true } : n))
-      );
-    } catch (err) {
-      console.error('Failed to mark read:', err);
+      setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, read: true } : n)));
+    } catch {
+      toast.error('Failed to mark notification as read');
     }
   };
 
@@ -65,8 +61,8 @@ const NotificationBell = () => {
     try {
       await api.patch('/notifications/read-all');
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    } catch (err) {
-      console.error('Failed to mark all read:', err);
+    } catch {
+      toast.error('Failed to mark all notifications as read');
     }
   };
 
@@ -75,14 +71,9 @@ const NotificationBell = () => {
       <button
         onClick={() => setShowPanel((p) => !p)}
         className="relative p-2 rounded-lg hover:bg-white/20 transition"
-        aria-label="Notifications"
+        aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
       >
-        <svg
-          className="w-6 h-6 text-white"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
+        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -103,6 +94,7 @@ const NotificationBell = () => {
           loading={loading}
           onMarkRead={handleMarkRead}
           onMarkAllRead={handleMarkAllRead}
+          onClose={() => setShowPanel(false)}
         />
       )}
     </div>

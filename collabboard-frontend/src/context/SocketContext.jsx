@@ -14,10 +14,21 @@ export const SocketProvider = ({ children }) => {
       const newSocket = io(window.location.origin, {
         auth: { token: accessToken },
         transports: ['websocket'],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
       });
 
       newSocket.on('connect', () => {
         newSocket.emit('join:personal', `user:${user.id}`);
+      });
+
+      newSocket.on('connect_error', (err) => {
+        // Auth failures on reconnect — don't spam, socket.io will retry automatically
+        if (err.message?.includes('Authentication error')) {
+          newSocket.disconnect();
+        }
       });
 
       socketRef.current = newSocket;

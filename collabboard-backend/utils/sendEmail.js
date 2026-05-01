@@ -19,7 +19,7 @@ const sendEmail = async ({ to, subject, html }) => {
       html,
     });
   } catch (error) {
-    console.error('Email send error:', error.message);
+    require('./logger').error(`Email send error: ${error.message}`);
     throw new Error('Failed to send email');
   }
 };

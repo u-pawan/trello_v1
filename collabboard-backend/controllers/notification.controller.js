@@ -1,45 +1,32 @@
 const Notification = require('../models/Notification');
+const AppError = require('../utils/AppError');
 
 const getNotifications = async (req, res) => {
-  try {
-    const notifications = await Notification.find({ user: req.user.id })
-      .sort({ createdAt: -1 })
-      .limit(20)
-      .populate('actor', 'name avatar');
-    res.json(notifications);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  const notifications = await Notification.find({ user: req.user.id })
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .populate('actor', 'name avatar');
+  res.json(notifications);
 };
 
 const markRead = async (req, res) => {
-  try {
-    const notification = await Notification.findOne({
-      _id: req.params.id,
-      user: req.user.id,
-    });
-    if (!notification) {
-      return res.status(404).json({ message: 'Notification not found' });
-    }
+  const notification = await Notification.findOne({
+    _id: req.params.id,
+    user: req.user.id,
+  });
+  if (!notification) throw new AppError('Notification not found', 404);
 
-    notification.read = true;
-    await notification.save();
-    res.json(notification);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  notification.read = true;
+  await notification.save();
+  res.json(notification);
 };
 
 const markAllRead = async (req, res) => {
-  try {
-    await Notification.updateMany(
-      { user: req.user.id, read: false },
-      { $set: { read: true } }
-    );
-    res.json({ message: 'All notifications marked as read' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  await Notification.updateMany(
+    { user: req.user.id, read: false },
+    { $set: { read: true } }
+  );
+  res.json({ message: 'All notifications marked as read' });
 };
 
 module.exports = { getNotifications, markRead, markAllRead };
